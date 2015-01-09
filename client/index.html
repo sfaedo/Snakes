@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+	<head>
+	<title>Snakes Server</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<script src="/js/jquery.min.js"></script>
+	<script src="/js/peer.min.js"></script>
+	<script src="/js/obelisk.min.js" type="text/javascript"></script>
+	
+	<style type="text/css">
+		canvas {
+			position: absolute;
+			left: 0;
+			right: 0;
+			top: 0;
+			bottom: 0;
+			height: 100%;
+			width: 100%;
+		}
+		
+		#canvas-board {
+			background-color: #F4F4F4;
+		}
+		
+		#serverName {
+			position: absolute;
+			left: 10px;
+			top: 10px;
+		}
+		
+		#playerList {
+			position: absolute;
+			left: 10px;
+			top: 40px;
+		}
+		
+		.color {
+			width: 40px;
+			height: 20px;
+			display: inline-block;
+			margin-right: 10px;
+            text-align: center;
+            line-height: 20px;
+		}
+		
+		.ready, .waiting, .disconnected, .unknown {
+			margin-left: 10px;
+		}
+		
+		.ready {
+			color: green;
+		}
+		
+		.ready:before {
+			content: '(ready)';
+		}
+		
+		.waiting {
+			color: red;
+		}
+
+		.waiting:before {
+			content: '(waiting)';
+		}
+		
+		.disconnected {
+			color: black;
+		}
+
+		.disconnected:before {
+			content: '(disconnected)';
+		}
+
+		.unknown {
+			color: lightgray;
+		}
+
+		.unknown:before {
+			content: '(unknown)';
+		}
+	</style>
+	</head>
+	<body>
+	<canvas id="canvas-board"></canvas>
+	<canvas id="canvas-game"></canvas>   
+	
+	<div id="serverName"></div>
+	<div id="playerList"></div>
+
+	<script src="/js/snakes.js" type="text/javascript"></script>
+	<script>
+		function createRandomWord() {
+		var consonants = 'bcdfghjklmnprstvwxyz',
+			vowels = 'aeiou',
+			rand = function(limit) {
+				return Math.floor(Math.random()*limit);
+			},
+			i, word='', length = 6,
+			consonant = consonants.split(''),
+			vowel = vowels.split('');
+		for (i=0;i<length/2;i++) {
+			var randConsonant = consonant[rand(consonant.length)],
+				randVowel = vowel[rand(vowel.length)];
+			word += randConsonant;
+			word += i*2<length-1 ? randVowel : '';
+		}
+		return word;
+	}
+
+	var snakes = new Snakes.Game();
+	//update();
+	function update() {
+	    setTimeout(function() {
+	        window.requestAnimationFrame(update);
+	        snakes.moveSnakes();
+	        snakes.Graphics.drawElements();
+	    }, 1000 / snakes.fps);        
+	}
+
+	(function() {
+	    var lastTime = 0;
+	    var vendors = ['ms', 'moz', 'webkit', 'o'];
+	    for(var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
+	        window.requestAnimationFrame = window[vendors[x]+'RequestAnimationFrame'];
+	        window.cancelAnimationFrame = window[vendors[x]+'CancelAnimationFrame']
+	                                   || window[vendors[x]+'CancelRequestAnimationFrame'];
+	    }
+	 
+	    if (!window.requestAnimationFrame)
+	        window.requestAnimationFrame = function(callback, element) {
+	            var currTime = new Date().getTime();
+	            var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+	            var id = window.setTimeout(function() { callback(currTime + timeToCall); },
+	              timeToCall);
+	            lastTime = currTime + timeToCall;
+	            return id;
+	        };
+	 
+	    if (!window.cancelAnimationFrame)
+	        window.cancelAnimationFrame = function(id) {
+	            clearTimeout(id);
+	        };
+	}());	
+	
+	var id = createRandomWord();
+	
+	var peer = new Peer(id, {key: 'e84q2tm4msglow29'});
+	var players = [];
+	var playing = false;
+
+	var condition = {
+	    waiting: 0,
+	    ready: 1,
+	    disconnected: 2
+	}
+
+	peer.on('open', function(id){
+	    document.title = 'Snake Server: ' + id;
+	    $('#serverName').text(document.title);
+	});
+
+	peer.on('connection', function(conn) {
+		if (players.length < 8) {
+			players.push(conn);
+			console.log(conn);
+			var color = colors[players.length - 1];
+			var snake = snakes.addSnake(conn.peer, parseInt(color.replace(/^#/, ''), 16));
+
+			conn.condition = condition.waiting;
+			conn.snake = snake;
+			conn.color = color;
+
+			snake.eatCallback = playersPaint;
+			snake.deadCallback = playerDead;
+			
+			conn.on('data', function(data){
+				if (data.getInfo) {
+					conn.send({ color: color });
+				}
+				else {
+					if (data.start) {
+					    conn.condition = condition.ready;
+						playersPaint();
+						if (playersReady()) {
+							snakes.addFruit();
+							playing = true;
+							update();
+						}
+					} else {
+						if (playing) {
+							if (data.move) {
+								conn.snake.actions(data.move);
+							}
+						}
+					}
+				}
+			});
+
+			conn.on('close', function () {
+			    conn.condition = condition.disconnected;
+
+			    playersPaint();
+			    
+			    if (!playing && playersReady()) {
+			        snakes.addFruit();
+			        playing = true;
+			        update();
+			    }
+			});
+
+			playersPaint();
+		}
+	});
+
+	window.onbeforeunload = function () {
+	    peer.destroy();
+	};
+
+
+	function playersReady() {
+	    var ready = true;
+	    for (var i = 0; i < players.length; i++) {
+	        ready = ready && players[i].condition;
+	    }
+	    return ready;
+	}
+
+	function playerDead(snake) {
+	    snake.conn.send({ dead: true });
+	}
+
+	function playersPaint() {
+	    $('#playerList').empty();
+
+	    players.sort(function (a, b) {
+	        return a.snake.points < b.snake.points;
+	    });
+
+	    for (var i = 0; i < players.length; i++) {
+	        var condition = 0;
+
+	        switch (players[i].condition) {
+	            case 0: condition = 'waiting';
+	                break;
+	            case 1: condition = 'ready';
+	                players[i].send({ points: players[i].snake.points, position: (i + 1), of: players.length });
+	                break;
+	            case 2: condition = 'disconnected';
+	                break;
+	            default: condition = 'unknown';
+	                break;
+	        }
+	        $('#playerList').append('<div class="player"><span class="color" style="background-color: ' + players[i].color + '">' + players[i].snake.points +  '</span>' + players[i].peer + '<span class="' + condition + '"></span></div>');
+		}
+	}
+	
+	var colors = [
+			'#FFA500' // orange
+		,	'#FF0000' // red
+		,	'#FFFF00' // yellow
+		,	'#A500FF' // violet
+		,	'#00FF00' // green
+		,	'#00A5FF' // light blue
+		,	'#FF00A5' // pink
+		,	'#0000ff' // blue
+		];
+		
+	</script>
+	</body>
+</html>

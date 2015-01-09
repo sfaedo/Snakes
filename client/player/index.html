@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Player #</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="mobile-web-app-capable" content="yes">
+        <script src="../js/jquery.min.js"></script>        
+        <script src="../js/peer.min.js"></script>
+        <script src="../js/screenfull.min.js"></script>
+        
+        <style type="text/css">
+            html, body,
+            .fullscreen, .settings, .controls {
+                height: 100%;
+                width: 100%;
+                padding: 0;
+                margin: 0;
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                -khtml-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+            }
+            
+            .settings input {
+                display: block;
+            }
+            
+            form {
+                width: 80%;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            
+            form input {
+                width: 100%;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                margin-top: 20px;
+                font-size: 20px;
+            }
+            
+            .controls {
+                display: none;
+            }
+            
+            #left, #right {
+                width: 40%;
+                height: 40%;
+                position: absolute;
+                bottom: 0;
+                font-size: 40px;
+            }
+            
+            #left {
+                left: 0px;
+            }
+            
+            #right {
+                right: 0;
+            }
+            
+            #start {
+                position: absolute;
+                top: 0;
+                width: 30%;
+                margin-left: auto;
+                margin-right: auto;
+                left: 0;
+                right: 0;
+                font-size: 20px;
+                padding: 10px;
+            }
+
+            #points, #position {
+                width: 100%;
+                font-size: 20px;
+                padding: 10px;
+                text-align: center;
+            }
+
+            #points {
+                padding-top: 70px;
+                font-size: 60px;
+            }
+            
+        </style>
+    </head>
+    <body>
+        <div class="fullscreen">
+            <div class="settings">
+                <form>
+                    <input type="text" id="playerId" placeholder="Enter Your Name" />   
+                    <input type="text" id="serverId" placeholder="Enter Server Id" />
+                    <input type="submit" id="connect" value="Connect!">
+                </form>
+            </div>
+            <div class="controls">
+                <button type="button" id="start">Start</button>
+                <div id="points">0</div>
+                <div id="position">- of -</div>
+                <button type="button" id="left">&lt;</button>
+                <button type="button" id="right">></button>
+            </div>
+        </div>
+    </body>
+    
+    <script>
+        if (util.supports.data) {
+            var peer = null;
+            var conn = null;
+            var playerId = '';
+            var serverId = '';
+            $('#connect').on('click', function (e) {
+                e.preventDefault();
+                playerId = $('#playerId').val().toLowerCase();
+                peer = new Peer(playerId, { key: 'e84q2tm4msglow29' });
+                serverId = $('#serverId').val().toLowerCase();
+                conn = peer.connect(serverId);
+                conn.on('open', function () {
+                    conn.send({ getInfo: true });
+                });
+
+                conn.on('data', function (data) {
+                    if (data.color) {
+                        $('.settings').hide();
+                        $('.controls').show();
+                        $('.controls').css('background-color', data.color);
+                    }
+
+                    if (data.position) {
+                        $('#points').text(data.points);
+                        $('#position').text(data.position + ' of ' + data.of);
+                    }
+
+                    if (data.dead) {
+                        $('#start').text('Dead!');
+                        $('#left').prop('disabled', true);
+                        $('#right').prop('disabled', true);
+                    }
+
+                    if (data.end) {
+
+                    }
+                });
+
+                conn.on('close', function () {
+                    alert('Disconnected from server');
+                    location.reload();
+                });
+
+                window.onbeforeunload = function () {
+                    peer.destroy();
+                };
+            });
+
+            $('#left').on('click', function (e) {
+                e.preventDefault();
+                conn.send({ move: { x: -1, y: 0 } });
+            });
+
+            $('#right').on('click', function (e) {
+                e.preventDefault();
+                conn.send({ move: { x: 1, y: 0 } });
+            });
+
+            $('#start').on('click', function (e) {
+                e.preventDefault();
+                conn.send({ start: true });
+                $('#start').text('Ready!');
+                $('#start').prop('disabled', true);
+            });
+        }
+        else {
+            alert('Sorry, your browser sucks!');
+        }
+
+
+    </script>
+</html>
